@@ -1,6 +1,10 @@
 import numpy as np
+from astropy.io import fits
 import matplotlib.pyplot as plt
 from skimage.registration import phase_cross_correlation
+import sys
+sys.path.insert(0, '/home/rtodorov/jetpol/ve/vlbi_errors')
+from spydiff import modelfit_core_wo_extending
 
 
 def get_core(img, noise):
@@ -24,6 +28,15 @@ if __name__ == "__main__":
     # loading data
     map1 = np.loadtxt('/home/rtodorov/wandering-jet/results/3C454.3/helcon_pitch70_los_0.5_coneha_0.125_delta_0.1_T_20.0_phi0_0.000000/stack_i.txt')
     map2 = np.loadtxt('/home/rtodorov/wandering-jet/results/3C454.3/helcon_pitch70_los_0.5_coneha_0.125_delta_0.1_T_20.0_phi0_0.000000/stack_p.txt')
+
+    core = modelfit_core_wo_extending('/home/rtodorov/maps-shifts/1641+399.j.2006_06_15.uvf', 
+                                      (512, 0.1), [1], path_to_script='/home/rtodorov/maps-shifts/script_clean_rms.txt',
+                                      dump_json_result=False)
+
+    print(core)
+    
+    
+    
     mapsize = map1.shape
     if map2.shape != mapsize:
         raise Exception("Incomparable maps")
