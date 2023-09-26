@@ -87,7 +87,7 @@
 
 integer clean_niter; 
 integer max_deep_clean_cycles; max_deep_clean_cycles = 20
-float overclean_coef; overclean_coef = 1.0
+float overclean_coef; overclean_coef = 3.0
 float clean_gain; clean_gain = 0.03
 float dynam;
 float flux_peak;

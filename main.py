@@ -6,15 +6,17 @@ import sys
 import os
 from tempfile import TemporaryDirectory
 sys.path.insert(0, '/home/rtodorov/jetpol/ve/vlbi_errors')
-from spydiff import clean_difmap, find_nw_beam, create_clean_image_from_fits_file
-from spydiff import create_difmap_file_from_single_component, filter_difmap_CC_model_by_r
-from spydiff import join_difmap_models, modelfit_difmap, convert_difmap_model_file_to_CCFITS
+from spydiff import (clean_difmap, find_nw_beam, create_clean_image_from_fits_file,
+            create_difmap_file_from_single_component, filter_difmap_CC_model_by_r,
+            join_difmap_models, modelfit_difmap, convert_difmap_model_file_to_CCFITS)
 from uv_data import UVData
+from image import plot as iplot
+from utils import find_bbox, find_image_std
 
 
 def get_core_img_mask(uvfits, mapsize_clean, beam_fractions, path_to_script, use_elliptical=False,
                                use_brightest_pixel_as_initial_guess=True, save_dir=None,
-                               dump_json_result=True):
+                               dump_json_result=True, base_dir=None):
 
     with TemporaryDirectory() as working_dir:
         # First CLEAN and dump difmap model file with CCs
@@ -28,7 +30,8 @@ def get_core_img_mask(uvfits, mapsize_clean, beam_fractions, path_to_script, use
                      super_unif_dynam=None, unif_dynam=None,
                      taper_gaussian_value=None, taper_gaussian_radius=None)
 
-        os.remove(os.path.join(base_dir, "difmap.log"))
+        if base_dir is not None:
+            os.remove(os.path.join(base_dir, "difmap.log"))
         uvdata = UVData(uvfits)
         freq_hz = uvdata.frequency
         # Find beam
@@ -40,8 +43,9 @@ def get_core_img_mask(uvfits, mapsize_clean, beam_fractions, path_to_script, use
         core = detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
                 use_brightest_pixel_as_initial_guess, use_elliptical, working_dir)
         mask = create_mask_from_round_core(core[1], mapsize_clean)
+        beam = (bmin, bmaj, bpa)
 
-    return ccimage.image, core[1], mask
+    return ccimage.image, core[1], mask, beam
 
 
 def detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
@@ -127,7 +131,8 @@ def detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
                                                "dec": dec, "size": size,
                                                "e": e, "bpa": bpa,
                                                "rms": np.nan}})
-    os.remove(os.path.join(base_dir, "difmap.log"))
+    if base_dir is not None:
+        os.remove(os.path.join(base_dir, "difmap.log"))
     return core
 
 
@@ -154,7 +159,6 @@ def get_spec_ind(imgs, freqs):
 
     shape = imgs[0].shape
     imgs = np.array(imgs)
-    print(imgs.shape)
     spec_ind_map = np.polyfit(freqs, imgs.reshape((len(freqs), shape[0]*shape[1])), 1)[0]
     spec_ind_map = spec_ind_map.reshape(shape)
     return spec_ind_map
@@ -162,10 +166,10 @@ def get_spec_ind(imgs, freqs):
 
 if __name__ == "__main__":
     # satting arguments
+    data_dir = '/mnt/jet1/yyk/VLBI/2cmVLBA/Udata/multifreq'
     base_dir = '/home/rtodorov/maps-shifts'
     sourse = '1641+399'
     date = '2006_06_15'
-    # FIXME: where should I take mapsize?
     mapsize = (1024, 0.1)
 
     freqs_dict = {12.1:'j', 8.1:'x', 8.4:'y'}
@@ -175,28 +179,45 @@ if __name__ == "__main__":
     cores = []
     masks = []
     freqs = []
+    beams = []
     for freq in freqs_dict:
         print(freq)
-        img, core, mask = get_core_img_mask('{}/{}.{}.{}.uvf'.format(base_dir, sourse, freqs_dict[freq], date), 
+        img, core, mask, beam = get_core_img_mask('{}/{}.{}.{}.uvf'.format(data_dir, sourse, freqs_dict[freq], date), 
                                             mapsize, [1], path_to_script='{}/script_clean_rms.txt'.format(base_dir),
-                                            dump_json_result=False)
+                                            dump_json_result=False, base_dir=base_dir)
         imgs.append(img)
         cores.append(core)
         masks.append(mask)
         freqs.append(freq)
+        beams.append(beam)
 
     # imgs[2][imgs[2] < 0] = 0
     # plt.imshow(np.log(imgs[2]*masks[2]+0.0001))
     # plt.savefig("img.png")
 
     # correlate maps with the first one and shift if nesessary
-    detected_shift = phase_cross_correlation(imgs[0], imgs[1], reference_mask=masks[0]*masks[1])
-    print(detected_shift)
-
     for img, mask in zip(imgs, masks):
         shift = phase_cross_correlation(imgs[0], img, reference_mask=masks[0]*mask)
         img = np.roll(img, shift)
 
     spec_ind_map = get_spec_ind(imgs, freqs)
-    plt.imshow(spec_ind_map)
-    plt.savefig("img.png")
+
+    # plot spectral index map
+    beam = beams[0]
+    npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
+    std = np.std(imgs[0])
+    blc, trc = find_bbox(imgs[0], level=3*std, min_maxintensity_mjyperbeam=4 * std,
+                         min_area_pix=npixels_beam, delta=10)
+    if blc[0] == 0: blc = (blc[0] + 1, blc[1])
+    if blc[1] == 0: blc = (blc[0], blc[1] + 1)
+    if trc[0] == imgs[0].shape: trc = (trc[0] - 1, trc[1])
+    if trc[1] == imgs[0].shape: trc = (trc[0], trc[1] - 1)
+    x = np.linspace(-mapsize[0]/2*mapsize[1]/206265000, mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
+    y = np.linspace(mapsize[0]/2*mapsize[1]/206265000, -mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
+    print(x)
+    colors_mask = imgs[0] < 2*std
+    iplot(contours=imgs[0], colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
+            y=y, cmap='coolwarm', min_abs_level=std, colors_mask=colors_mask, beam=beam,
+            blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
+
+    plt.savefig("spec_ind_map.png")
