@@ -43,7 +43,7 @@ def get_core_img_mask(uvfits, mapsize_clean, beam_fractions, path_to_script, use
         core = detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
                 use_brightest_pixel_as_initial_guess, use_elliptical, working_dir)
         mask = create_mask_from_round_core(core[1], mapsize_clean)
-        beam = (bmin, bmaj, bpa)
+        beam = (bmaj, bmin, bpa)
 
     return ccimage.image, core[1], mask, beam
 
@@ -104,7 +104,6 @@ def detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
                     theta = np.deg2rad(theta)
                     ra = r*np.sin(theta)
                     dec = r*np.cos(theta)
-
 
                     # CG
                     if type_ == "1":
@@ -182,18 +181,15 @@ if __name__ == "__main__":
     beams = []
     for freq in freqs_dict:
         print(freq)
+        # FIXME: func return strange img
         img, core, mask, beam = get_core_img_mask('{}/{}.{}.{}.uvf'.format(data_dir, sourse, freqs_dict[freq], date), 
                                             mapsize, [1], path_to_script='{}/script_clean_rms.txt'.format(base_dir),
                                             dump_json_result=False, base_dir=base_dir)
-        imgs.append(img)
+        imgs.append(img-img[0, 0])
         cores.append(core)
         masks.append(mask)
         freqs.append(freq)
         beams.append(beam)
-
-    # imgs[2][imgs[2] < 0] = 0
-    # plt.imshow(np.log(imgs[2]*masks[2]+0.0001))
-    # plt.savefig("img.png")
 
     # correlate maps with the first one and shift if nesessary
     for img, mask in zip(imgs, masks):
@@ -214,7 +210,6 @@ if __name__ == "__main__":
     if trc[1] == imgs[0].shape: trc = (trc[0], trc[1] - 1)
     x = np.linspace(-mapsize[0]/2*mapsize[1]/206265000, mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
     y = np.linspace(mapsize[0]/2*mapsize[1]/206265000, -mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
-    print(x)
     colors_mask = imgs[0] < 2*std
     iplot(contours=imgs[0], colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
             y=y, cmap='coolwarm', min_abs_level=std, colors_mask=colors_mask, beam=beam,
