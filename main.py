@@ -8,10 +8,42 @@ from tempfile import TemporaryDirectory
 sys.path.insert(0, '/home/rtodorov/jetpol/ve/vlbi_errors')
 from spydiff import (clean_difmap, find_nw_beam, create_clean_image_from_fits_file,
             create_difmap_file_from_single_component, filter_difmap_CC_model_by_r,
-            join_difmap_models, modelfit_difmap, convert_difmap_model_file_to_CCFITS)
+            join_difmap_models, modelfit_difmap, get_uvrange)
 from uv_data import UVData
 from image import plot as iplot
 from utils import find_bbox, find_image_std
+
+
+def load_data(sourse, date, freq):
+        freqs_dict = {8.1:'x', 8.4:'y', 12.1:'j'}
+        data_dir_multi = '/mnt/jet1/yyk/VLBI/2cmVLBA/Udata/multifreq'
+        if freq == 15.4:
+            return '/mnt/jet1/yyk/VLBI/2cmVLBA/Udata/{}/{}/{}.u.{}.uvf'.format(sourse, date, sourse, date)
+        else:
+            return '{}/{}.{}.{}.uvf'.format(data_dir_multi, sourse, freqs_dict[freq], date)
+
+
+def create_individual_script(sourse, date, freqs, base_dir, deep_clean=False):
+    uv_min = np.inf
+    uv_max = 0
+    for freq in freqs:
+        uv_min_, uv_max_ = get_uvrange(load_data(sourse, date, freq))
+        if uv_min_ < uv_min:
+            uv_min = uv_min_
+        if uv_max_ > uv_max:
+            uv_max = uv_max_                                
+
+    with open(os.path.join(base_dir, "script_clean_rms.txt")) as f:
+        lines = f.readlines()
+
+    lines.insert(86, 'uvrange {}, {}'.format(uv_min, uv_max))
+    if deep_clean:
+        lines[90] = 'float overclean_coef; overclean_coef = 3.0\n'
+    else:
+        lines[90] = 'float overclean_coef; overclean_coef = 1.0\n'
+
+    with open(os.path.join(base_dir, 'scripts/script_clean_rms_{}.txt'.format(sourse)), 'w') as f:
+        f.writelines(lines)
 
 
 def get_core_img_mask(uvfits, mapsize_clean, beam_fractions, path_to_script, use_elliptical=False,
@@ -169,68 +201,64 @@ def get_spec_ind(imgs, freq, npixels_beam):
     return spec_ind_map
 
 
+
 if __name__ == "__main__":
     # satting arguments
-    data_dir = '/mnt/jet1/yyk/VLBI/2cmVLBA/Udata/multifreq'
     base_dir = '/home/rtodorov/maps-shifts'
-    sourse = '1641+399'
-    date = '2006_06_15'
     mapsize = (1024, 0.1)
+    deep_clean = False
     # important to put lowest freq first
-    freqs_dict = {8.1:'x', 8.4:'y', 12.1:'j'}
+    freqs = [8.1, 8.4, 12.1, 15.4]
     
-    # getting images, core parameters and masks according to cores
-    imgs = []
-    cores = []
-    masks = []
-    freqs = []
-    beams = []
-    beam = None
-    for freq in freqs_dict:
-        print(freq)
-        img, core, mask, beam = get_core_img_mask('{}/{}.{}.{}.uvf'.format(data_dir, sourse, freqs_dict[freq], date), 
-                                            mapsize, [1], path_to_script='{}/script_clean_rms.txt'.format(base_dir),
-                                            dump_json_result=False, base_dir=base_dir, beam=beam)
-        imgs.append(img)
-        cores.append(core)
-        masks.append(mask)
-        freqs.append(freq)
-        beams.append(beam)
-
-    # TODO: write more general way to get 15.4 GHz
-    img, core, mask, beam = get_core_img_mask('/mnt/jet1/yyk/VLBI/2cmVLBA/Udata/{}/{}/{}.u.{}.uvf'.format(sourse, date, sourse, date), 
-                                            mapsize, [1], path_to_script='{}/script_clean_rms.txt'.format(base_dir),
-                                            dump_json_result=False, base_dir=base_dir, beam=beam)
-    imgs.append(img)
-    cores.append(core)
-    masks.append(mask)
-    freqs.append(freq)
-    beams.append(beam)
+    with open("sourse_date_list.txt") as f:
+        lines = f.readlines()
     
-    # correlate maps with the first one and shift if nesessary
-    for img, mask in zip(imgs, masks):
-        shift_arr = phase_cross_correlation(imgs[0], img, reference_mask=masks[0]*mask)
-        shift = (int(shift_arr[0]), int(shift_arr[1]))
-        img = np.roll(img, shift)
-    
-    npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
-    spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
+    for line in lines:
+        arr = line.split()
+        if arr[0] == 'skip':
+            continue
+        sourse = arr[0]
+        date = arr[1]
+        # getting images, core parameters and masks according to cores
+        imgs = []
+        cores = []
+        masks = []
+        beams = []
+        beam = None
+        create_individual_script(sourse, date, freqs, base_dir, deep_clean=deep_clean)
+        for freq in freqs:
+            img, core, mask, beam = get_core_img_mask(load_data(sourse, date, freq), mapsize, [1], 
+                                                path_to_script=os.path.join(base_dir, 'scripts/script_clean_rms_{}.txt'.format(sourse)),
+                                                dump_json_result=False, base_dir=base_dir, beam=beam)
+            imgs.append(img)
+            cores.append(core)
+            masks.append(mask)
+            beams.append(beam)
+        
+        # correlate maps with the first one and shift if nesessary
+        for img, mask in zip(imgs, masks):
+            shift_arr = phase_cross_correlation(imgs[0], img, reference_mask=masks[0]*mask)
+            shift = (int(shift_arr[0]), int(shift_arr[1]))
+            img = np.roll(img, shift)
+        
+        npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
+        spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
 
-    # plot spectral index map
-    img_toplot = imgs[-1]
-    beam = beams[0]
-    std = find_image_std(img_toplot, npixels_beam)
-    blc, trc = find_bbox(img_toplot, level=10*std, min_maxintensity_mjyperbeam=20*std,
-                         min_area_pix=2*npixels_beam, delta=10)
-    if blc[0] == 0: blc = (blc[0] + 1, blc[1])
-    if blc[1] == 0: blc = (blc[0], blc[1] + 1)
-    if trc[0] == img_toplot.shape: trc = (trc[0] - 1, trc[1])
-    if trc[1] == img_toplot.shape: trc = (trc[0], trc[1] - 1)
-    x = np.linspace(-mapsize[0]/2*mapsize[1]/206265000, mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
-    y = np.linspace(mapsize[0]/2*mapsize[1]/206265000, -mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
-    colors_mask = img_toplot < 3*std
-    iplot(contours=img_toplot, colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
-            y=y, cmap='coolwarm', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
-            blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
+        # plot spectral index map
+        img_toplot = imgs[-1]
+        beam = beams[0]
+        std = find_image_std(img_toplot, npixels_beam)
+        blc, trc = find_bbox(img_toplot, level=10*std, min_maxintensity_mjyperbeam=20*std,
+                            min_area_pix=2*npixels_beam, delta=10)
+        if blc[0] == 0: blc = (blc[0] + 1, blc[1])
+        if blc[1] == 0: blc = (blc[0], blc[1] + 1)
+        if trc[0] == img_toplot.shape: trc = (trc[0] - 1, trc[1])
+        if trc[1] == img_toplot.shape: trc = (trc[0], trc[1] - 1)
+        x = np.linspace(-mapsize[0]/2*mapsize[1]/206265000, mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
+        y = np.linspace(mapsize[0]/2*mapsize[1]/206265000, -mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
+        colors_mask = img_toplot < 3*std
+        iplot(contours=img_toplot, colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
+                y=y, cmap='hsv', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
+                blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
 
-    plt.savefig("spec_ind_map.png")
+        plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
