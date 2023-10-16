@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from skimage.registration import phase_cross_correlation
@@ -207,17 +208,26 @@ if __name__ == "__main__":
     base_dir = '/home/rtodorov/maps-shifts'
     mapsize = (1024, 0.1)
     deep_clean = False
-    # important to put lowest freq first
     freqs = [8.1, 8.4, 12.1, 15.4]
+    freqs = np.sort(np.array(freqs))
     
     with open("sourse_date_list.txt") as f:
         lines = f.readlines()
     
+    shifts = {'sourse':[],
+              'shift_x_81':[],
+              'shift_y_81':[],
+              'shift_x_84':[],
+              'shift_y_84':[],
+              'shift_x_121':[],
+              'shift_y_121':[]}
+
     for line in lines:
         arr = line.split()
         if arr[0] == 'skip':
             continue
         sourse = arr[0]
+        shifts['sourse'].append(sourse)
         date = arr[1]
         # getting images, core parameters and masks according to cores
         imgs = []
@@ -235,11 +245,14 @@ if __name__ == "__main__":
             masks.append(mask)
             beams.append(beam)
         
-        # correlate maps with the first one and shift if nesessary
-        for img, mask in zip(imgs, masks):
-            shift_arr = phase_cross_correlation(imgs[0], img, reference_mask=masks[0]*mask)
+        # correlate maps with the 15.4 GHz and shift if nesessary
+        for i, (img, mask) in enumerate(zip(imgs, masks)):
+            shift_arr = phase_cross_correlation(imgs[-1], img, reference_mask=masks[-1]*mask)
             shift = (int(shift_arr[0]), int(shift_arr[1]))
             img = np.roll(img, shift)
+            if freqs[i] != 15.4:
+                shifts['shift_x_{}'.format(freqs[i]).replace('.', '')].append(shift[0])
+                shifts['shift_y_{}'.format(freqs[i]).replace('.', '')].append(shift[1])
         
         npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
         spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
@@ -262,3 +275,7 @@ if __name__ == "__main__":
                 blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
 
         plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
+
+    data = pd.DataFrame(shifts)
+    with open(os.path.join(base_dir, 'core_shifts.txt'), 'w') as fo:
+        fo.write(data.to_string())
