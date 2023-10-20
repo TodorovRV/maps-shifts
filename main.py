@@ -226,7 +226,7 @@ if __name__ == "__main__":
     freqs = [8.1, 8.4, 12.1, 15.4]
     freqs = np.sort(np.array(freqs))
     
-    with open("sourse_date_list_totest.txt") as f:
+    with open("sourse_date_list.txt") as f:
         lines = f.readlines()
     
     core_shifts = {'sourse':[],
@@ -268,18 +268,17 @@ if __name__ == "__main__":
             if freqs[i] != 15.4:
                 #core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(shift_arr[0]*mapsize[1])
                 #core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(shift_arr[1]*mapsize[1])
-                core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(cores[i]['dec'] 
-                                                                                     + shift_arr[0]*mapsize[1]-cores[-1]['dec'])
-                core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(cores[i]['ra'] 
-                                                                                     + shift_arr[1]*mapsize[1]-cores[-1]['ra'])
-                
-                
+                core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(-cores[i]['dec'] 
+                                                                                     -shift_arr[0]*mapsize[1]+cores[-1]['dec'])
+                core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(-cores[i]['ra'] 
+                                                                                     +shift_arr[1]*mapsize[1]+cores[-1]['ra'])
+        
+        beam = beams[-1]
         npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
         spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
 
         # plot spectral index map
         img_toplot = imgs[-1]
-        beam = beams[0]
         std = find_image_std(img_toplot, npixels_beam)
         blc, trc = find_bbox(img_toplot, level=5*std, min_maxintensity_mjyperbeam=20*std,
                             min_area_pix=2*npixels_beam, delta=10)
