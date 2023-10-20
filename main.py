@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 sys.path.insert(0, '/home/rtodorov/jetpol/ve/vlbi_errors')
 from spydiff import (clean_difmap, find_nw_beam, create_clean_image_from_fits_file,
             create_difmap_file_from_single_component, filter_difmap_CC_model_by_r,
-            join_difmap_models, modelfit_difmap, get_uvrange)
+            join_difmap_models, modelfit_difmap, get_uvrange, convert_difmap_model_file_to_CCFITS)
 from uv_data import UVData
 from image import plot as iplot
 from utils import find_bbox, find_image_std
@@ -78,8 +78,12 @@ def get_core_img_mask(uvfits, mapsize_clean, beam_fractions, path_to_script, use
         # detect core and find image
         core = detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
                 use_brightest_pixel_as_initial_guess, use_elliptical, working_dir)
-        mask = create_mask_from_round_core(core[1], mapsize_clean)
         beam = (bmaj, bmin, bpa)
+        npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
+        std = find_image_std(ccimage.image, npixels_beam)
+        mask = create_mask_from_core(core, mapsize, working_dir, beam, uvfits, std)
+        if base_dir is not None:
+            os.remove(os.path.join(base_dir, "difmap.log"))
 
     return ccimage.image, core[1], mask, beam
 
@@ -171,6 +175,17 @@ def detect_core(ccimage, uvfits, beam_fractions, bmaj, mapsize_clean, freq_hz,
     return core
 
 
+def create_mask_from_core(core, mapsize, working_dir, beam, uvfits, std):
+    convert_difmap_model_file_to_CCFITS(os.path.join(working_dir, "1.mdl"), stokes='i', mapsize=mapsize,
+                                        restore_beam=beam, uvfits_template=uvfits,
+                                        out_ccfits=os.path.join(working_dir, "1.fits"), shift=None,
+                                        show_difmap_output=True)
+    core_image = create_clean_image_from_fits_file(os.path.join(working_dir, "1.fits"))
+    mask = np.ones((mapsize[0], mapsize[0]))
+    mask[core_image.image > 3*std] = 0
+    return mask
+
+
 def create_mask_from_round_core(core, mapsize):
     # function creates mask for map deleting sourse core
     mask = np.ones((mapsize[0], mapsize[0]))
@@ -179,7 +194,7 @@ def create_mask_from_round_core(core, mapsize):
     r_pix = int(core["size"]/mapsize[1])
     for dec_pix in np.arange(mapsize[0]):
         for ra_pix in np.arange(mapsize[0]):
-            if (dec_pix-mapsize[0]/2-shift_dec_pix)**2 + (ra_pix-mapsize[0]/2+shift_ra_pix)**2 <= r_pix**2:
+            if (dec_pix-mapsize[0]/2-shift_dec_pix)**2 + (ra_pix-mapsize[0]/2+shift_ra_pix)**2 <= (10*r_pix)**2:
                 mask[dec_pix, ra_pix] = 0
     return mask
 
@@ -211,23 +226,23 @@ if __name__ == "__main__":
     freqs = [8.1, 8.4, 12.1, 15.4]
     freqs = np.sort(np.array(freqs))
     
-    with open("sourse_date_list.txt") as f:
+    with open("sourse_date_list_totest.txt") as f:
         lines = f.readlines()
     
-    shifts = {'sourse':[],
-              'shift_x_81':[],
-              'shift_y_81':[],
-              'shift_x_84':[],
-              'shift_y_84':[],
-              'shift_x_121':[],
-              'shift_y_121':[]}
+    core_shifts = {'sourse':[],
+              'shift_dec_81':[],
+              'shift_ra_81':[],
+              'shift_dec_84':[],
+              'shift_ra_84':[],
+              'shift_dec_121':[],
+              'shift_ra_121':[]}
 
     for line in lines:
         arr = line.split()
         if arr[0] == 'skip':
             continue
         sourse = arr[0]
-        shifts['sourse'].append(sourse)
+        core_shifts['sourse'].append(sourse)
         date = arr[1]
         # getting images, core parameters and masks according to cores
         imgs = []
@@ -247,13 +262,18 @@ if __name__ == "__main__":
         
         # correlate maps with the 15.4 GHz and shift if nesessary
         for i, (img, mask) in enumerate(zip(imgs, masks)):
-            shift_arr = phase_cross_correlation(imgs[-1], img, reference_mask=masks[-1]*mask)
-            shift = (int(shift_arr[0]), int(shift_arr[1]))
-            img = np.roll(img, shift)
+            shift_arr = phase_cross_correlation(imgs[-1], img, reference_mask=masks[-1], moving_mask=mask)
+            img = np.roll(img, int(shift_arr[0]), axis=0)
+            img = np.roll(img, int(shift_arr[1]), axis=1)
             if freqs[i] != 15.4:
-                shifts['shift_x_{}'.format(freqs[i]).replace('.', '')].append(shift[0])
-                shifts['shift_y_{}'.format(freqs[i]).replace('.', '')].append(shift[1])
-        
+                #core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(shift_arr[0]*mapsize[1])
+                #core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(shift_arr[1]*mapsize[1])
+                core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(cores[i]['dec'] 
+                                                                                     + shift_arr[0]*mapsize[1]-cores[-1]['dec'])
+                core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(cores[i]['ra'] 
+                                                                                     + shift_arr[1]*mapsize[1]-cores[-1]['ra'])
+                
+                
         npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
         spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
 
@@ -261,7 +281,7 @@ if __name__ == "__main__":
         img_toplot = imgs[-1]
         beam = beams[0]
         std = find_image_std(img_toplot, npixels_beam)
-        blc, trc = find_bbox(img_toplot, level=10*std, min_maxintensity_mjyperbeam=20*std,
+        blc, trc = find_bbox(img_toplot, level=5*std, min_maxintensity_mjyperbeam=20*std,
                             min_area_pix=2*npixels_beam, delta=10)
         if blc[0] == 0: blc = (blc[0] + 1, blc[1])
         if blc[1] == 0: blc = (blc[0], blc[1] + 1)
@@ -271,11 +291,11 @@ if __name__ == "__main__":
         y = np.linspace(mapsize[0]/2*mapsize[1]/206265000, -mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
         colors_mask = img_toplot < 3*std
         iplot(contours=img_toplot, colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
-                y=y, cmap='hsv', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
+                y=y, cmap='gist_rainbow', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
                 blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
 
         plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
 
-    data = pd.DataFrame(shifts)
+    data = pd.DataFrame(core_shifts)
     with open(os.path.join(base_dir, 'core_shifts.txt'), 'w') as fo:
         fo.write(data.to_string())
