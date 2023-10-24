@@ -182,7 +182,7 @@ def create_mask_from_core(core, mapsize, working_dir, beam, uvfits, std):
                                         show_difmap_output=True)
     core_image = create_clean_image_from_fits_file(os.path.join(working_dir, "1.fits"))
     mask = np.ones((mapsize[0], mapsize[0]))
-    mask[core_image.image > 3*std] = 0
+    mask[core_image.image > 10*std] = 0
     return mask
 
 
@@ -229,20 +229,35 @@ if __name__ == "__main__":
     with open("sourse_date_list.txt") as f:
         lines = f.readlines()
     
-    core_shifts = {'sourse':[],
-              'shift_dec_81':[],
-              'shift_ra_81':[],
-              'shift_dec_84':[],
-              'shift_ra_84':[],
-              'shift_dec_121':[],
-              'shift_ra_121':[]}
+    data_dict = {'sourse':[],
+              'core_shift_dec_81':[],
+              'core_shift_ra_81':[],
+              'core_shift_dec_84':[],
+              'core_shift_ra_84':[],
+              'core_shift_dec_121':[],
+              'core_shift_ra_121':[],
+              'img_shift_dec_81':[],
+              'img_shift_ra_81':[],
+              'img_shift_dec_84':[],
+              'img_shift_ra_84':[],
+              'img_shift_dec_121':[],
+              'img_shift_ra_121':[],
+              'core_loc_dec_81':[],
+              'core_loc_ra_81':[],
+              'core_loc_dec_84':[],
+              'core_loc_ra_84':[],
+              'core_loc_dec_121':[],
+              'core_loc_ra_121':[],
+              'core_loc_dec_154':[],
+              'core_loc_ra_154':[]}
+
 
     for line in lines:
         arr = line.split()
         if arr[0] == 'skip':
             continue
         sourse = arr[0]
-        core_shifts['sourse'].append(sourse)
+        data_dict['sourse'].append(sourse)
         date = arr[1]
         # getting images, core parameters and masks according to cores
         imgs = []
@@ -262,17 +277,19 @@ if __name__ == "__main__":
         
         # correlate maps with the 15.4 GHz and shift if nesessary
         for i, (img, mask) in enumerate(zip(imgs, masks)):
-            shift_arr = phase_cross_correlation(imgs[-1], img, reference_mask=masks[-1], moving_mask=mask)
+            print(masks[-1])
+            shift_arr = phase_cross_correlation(reference_image=imgs[-1], return_error=False, moving_image=img, reference_mask=masks[-1], moving_mask=mask, upsample_factor=10)
+            print(shift_arr)
             img = np.roll(img, int(shift_arr[0]), axis=0)
             img = np.roll(img, int(shift_arr[1]), axis=1)
-            if freqs[i] != 15.4:
-                #core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(shift_arr[0]*mapsize[1])
-                #core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(shift_arr[1]*mapsize[1])
-                core_shifts['shift_dec_{}'.format(freqs[i]).replace('.', '')].append(-cores[i]['dec'] 
-                                                                                     -shift_arr[0]*mapsize[1]+cores[-1]['dec'])
-                core_shifts['shift_ra_{}'.format(freqs[i]).replace('.', '')].append(-cores[i]['ra'] 
-                                                                                     +shift_arr[1]*mapsize[1]+cores[-1]['ra'])
-        
+            img_shift_dict = {'dec':shift_arr[0]*mapsize[1], 'ra':-shift_arr[1]*mapsize[1]}
+            for ax in ['dec', 'ra']:
+                data_dict['core_loc_{}_{}'.format(ax, freqs[i]).replace('.', '')].append(cores[i][ax])
+                if freqs[i] != 15.4:
+                    data_dict['core_shift_{}_{}'.format(ax, freqs[i]).replace('.', '')].append(cores[i][ax] 
+                                                                        +img_shift_dict[ax]-cores[-1][ax])
+                    data_dict['img_shift_{}_{}'.format(ax, freqs[i]).replace('.', '')].append(img_shift_dict[ax])
+
         beam = beams[-1]
         npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
         spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
@@ -292,9 +309,15 @@ if __name__ == "__main__":
         iplot(contours=img_toplot, colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
                 y=y, cmap='gist_rainbow', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
                 blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
-
         plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
+        plt.close()
 
-    data = pd.DataFrame(core_shifts)
-    with open(os.path.join(base_dir, 'core_shifts.txt'), 'w') as fo:
+        iplot(contours=img_toplot, colors=masks[-1], vectors=None, vectors_values=None, x=x,
+                y=y, cmap='coolwarm', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
+                blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
+        plt.savefig(os.path.join(base_dir, 'index_maps/core_map_{}.png'.format(sourse)), bbox_inches='tight')
+        plt.close()
+
+    data = pd.DataFrame(data_dict)
+    with open(os.path.join(base_dir, 'un_shift_data.txt'), 'w') as fo:
         fo.write(data.to_string())

@@ -80,12 +80,12 @@ def plot_shiftdata_diff(data_dict1, data_dict2, freqs, mapsize):
                     shifts1[freq] = []
                 if not freq in shifts2:
                     shifts2[freq] = []
-                if data1['shift_dec_{}'.format(freq).replace('.', '')] is not None and \
-                        data2['shift_dec_{}'.format(freq).replace('.', '')] is not None:
-                    shifts1[freq].append(np.hypot(data1['shift_dec_{}'.format(freq).replace('.', '')],
-                                                 data1['shift_ra_{}'.format(freq).replace('.', '')]))
-                    shifts2[freq].append(np.hypot(data2['shift_dec_{}'.format(freq).replace('.', '')],
-                                                 data2['shift_ra_{}'.format(freq).replace('.', '')]))
+                if data1['core_shift_dec_{}'.format(freq).replace('.', '')] is not None and \
+                        data2['core_shift_dec_{}'.format(freq).replace('.', '')] is not None:
+                    shifts1[freq].append(np.hypot(data1['core_shift_dec_{}'.format(freq).replace('.', '')],
+                                                 data1['core_shift_ra_{}'.format(freq).replace('.', '')]))
+                    shifts2[freq].append(np.hypot(data2['core_shift_dec_{}'.format(freq).replace('.', '')],
+                                                 data2['core_shift_ra_{}'.format(freq).replace('.', '')]))
     gridsize = 0.01
 
     for freq in freqs:
