@@ -9,12 +9,12 @@ def process_mojave_shift_data(data_dir, save_dir, mapsize):
         lines = f.readlines()
     
     shifts = {'sourse':[],
-              'shift_dec_81':[],
-              'shift_ra_81':[],
-              'shift_dec_84':[],
-              'shift_ra_84':[],
-              'shift_dec_121':[],
-              'shift_ra_121':[]}
+              'core_shift_dec_81':[],
+              'core_shift_ra_81':[],
+              'core_shift_dec_84':[],
+              'core_shift_ra_84':[],
+              'core_shift_dec_121':[],
+              'core_shift_ra_121':[]}
     for line in lines:
         line = line.split()
         sourse = line[1]
@@ -22,23 +22,23 @@ def process_mojave_shift_data(data_dir, save_dir, mapsize):
         pa = float(line[3])
         shifts['sourse'].append(sourse)
         if line[4] != '-':
-            shifts['shift_dec_81'].append(float(line[5])*np.sin(float(line[4])+pa))
-            shifts['shift_ra_81'].append(float(line[5])*np.cos(float(line[4])+pa))
+            shifts['core_shift_dec_81'].append(float(line[5])*np.sin(float(line[4])+pa))
+            shifts['core_shift_ra_81'].append(float(line[5])*np.cos(float(line[4])+pa))
         else:
-            shifts['shift_dec_81'].append('-')
-            shifts['shift_ra_81'].append('-')
+            shifts['core_shift_dec_81'].append('-')
+            shifts['core_shift_ra_81'].append('-')
         if line[7] != '-':
-            shifts['shift_dec_84'].append(float(line[8])*np.sin(float(line[7])+pa))
-            shifts['shift_ra_84'].append(float(line[8])*np.cos(float(line[7])+pa))
+            shifts['core_shift_dec_84'].append(float(line[8])*np.sin(float(line[7])+pa))
+            shifts['core_shift_ra_84'].append(float(line[8])*np.cos(float(line[7])+pa))
         else:
-            shifts['shift_dec_84'].append('-')
-            shifts['shift_ra_84'].append('-')
+            shifts['core_shift_dec_84'].append('-')
+            shifts['core_shift_ra_84'].append('-')
         if line[10] != '-':
-            shifts['shift_dec_121'].append(float(line[11])*np.sin(float(line[10])+pa))
-            shifts['shift_ra_121'].append(float(line[11])*np.cos(float(line[10])+pa))
+            shifts['core_shift_dec_121'].append(float(line[11])*np.sin(float(line[10])+pa))
+            shifts['core_shift_ra_121'].append(float(line[11])*np.cos(float(line[10])+pa))
         else:
-            shifts['shift_dec_121'].append('-')
-            shifts['shift_ra_121'].append('-')
+            shifts['core_shift_dec_121'].append('-')
+            shifts['core_shift_ra_121'].append('-')
     data = pd.DataFrame(shifts)
     with open(os.path.join(save_dir, 'core_shifts_mojave_proc.txt'), 'w') as fo:
         fo.write(data.to_string())
@@ -55,9 +55,9 @@ def read_shift_data(data_file, data_dir):
         raise Exception("Incorrect data type!")
     
     for line in lines:
-        line = line.split()
-        if len(line) < 8:
+        if line == lines[0]:
             continue
+        line = line.split()
         shift_dict = {}
         for i, key in enumerate(dict_keys):
             if line[i+2] == '-':
@@ -110,12 +110,13 @@ def plot_shiftdata_diff(data_dict1, data_dict2, freqs, mapsize):
         plt.savefig('data_comp_{}.png'.format(freq), bbox_inches='tight')
         plt.close()
 
+
 if __name__ == "__main__":
     data_dir = '/home/rtodorov/maps-shifts'
     save_dir = data_dir
     mapsize = (1024, 0.1)
     freqs = [8.1, 8.4, 12.1]
-    my_data = read_shift_data('core_shifts.txt', data_dir)
+    my_data = read_shift_data('un_shift_data.txt', data_dir)
     mojave_data = read_shift_data('core_shifts_mojave_proc.txt', data_dir)
     plot_shiftdata_diff(my_data, mojave_data, freqs, mapsize)
     # process_mojave_shift_data(data_dir, save_dir, mapsize)

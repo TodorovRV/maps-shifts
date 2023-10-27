@@ -6,6 +6,8 @@ from skimage.registration import phase_cross_correlation
 import sys
 import os
 from tempfile import TemporaryDirectory
+from skimage.registration._masked_phase_cross_correlation import cross_correlate_masked
+from astropy.modeling import models, fitting
 sys.path.insert(0, '/home/rtodorov/jetpol/ve/vlbi_errors')
 from spydiff import (clean_difmap, find_nw_beam, create_clean_image_from_fits_file,
             create_difmap_file_from_single_component, filter_difmap_CC_model_by_r,
@@ -13,6 +15,8 @@ from spydiff import (clean_difmap, find_nw_beam, create_clean_image_from_fits_fi
 from uv_data import UVData
 from image import plot as iplot
 from utils import find_bbox, find_image_std
+sys.path.insert(0, '/home/rtodorov/alpha')
+from alpha_utils import rebase_CLEAN_model
 
 
 def load_data(sourse, date, freq):
@@ -217,6 +221,42 @@ def get_spec_ind(imgs, freq, npixels_beam):
     return spec_ind_map
 
 
+def registrate_images(image1, image2, mask1, mask2, fit_gaussian=True, n=9):
+    """
+    :param image1:
+        2d numpy array with image.
+    :param image2:
+        2d numpy array with image.
+    :param mask1:
+        Must be ``True`` at valid pixels.
+    :param mask2:
+        Must be ``True`` at valid pixels.
+    :param fit_gaussian: (optional)
+        Fit 2D Gaussian to the peak of the correlation matrix?
+        (default: ``True``)
+    :param n: (optional)
+        Half-width [pix] of the square, centered on the position of the maximum
+        correlation, where to fit 2D Gaussian. (default: ``9``)
+    :return:
+        A tuple of shifts [pixels] (DEC, RA).
+    """
+    corr_matrix = cross_correlate_masked(image1, image2, mask1, mask2)
+    max_pos = np.unravel_index(np.argmax(corr_matrix), corr_matrix.shape)
+
+    if fit_gaussian:
+        # Grab a part pf image around maximal correlation coefficient
+        sub = corr_matrix[max_pos[0]-n : max_pos[0]+n, max_pos[1]-n : max_pos[1]+n]
+        x, y = np.mgrid[:2*n, :2*n]
+        p_init = models.Gaussian2D(1, n, n, n/2, n/2, 0)
+        fit_p = fitting.LevMarLSQFitter()
+        p = fit_p(p_init, x, y, sub)
+        result = p.x_mean.value-n+1+max_pos[0]-image1.shape[0], p.y_mean.value-n+1+max_pos[1]-image2.shape[1]
+    else:
+        result = max_pos[0]-image1.shape[0]+1, max_pos[1]-image2.shape[1]+1
+
+    return result
+
+
 
 if __name__ == "__main__":
     # satting arguments
@@ -266,7 +306,19 @@ if __name__ == "__main__":
         beams = []
         beam = None
         create_individual_script(sourse, date, freqs, base_dir, deep_clean=deep_clean)
+
+        max_freq = np.max(freqs)
+        img, core, mask, beam = get_core_img_mask(load_data(sourse, date, max_freq), mapsize, [1], 
+                                                path_to_script=os.path.join(base_dir, 'scripts/script_clean_rms_{}.txt'.format(sourse)),
+                                                dump_json_result=False, base_dir=base_dir, beam=beam)
+        imgs.append(img)
+        cores.append(core)
+        masks.append(mask)
+        beams.append(beam)
+
         for freq in freqs:
+            if freq == max_freq:
+                continue
             img, core, mask, beam = get_core_img_mask(load_data(sourse, date, freq), mapsize, [1], 
                                                 path_to_script=os.path.join(base_dir, 'scripts/script_clean_rms_{}.txt'.format(sourse)),
                                                 dump_json_result=False, base_dir=base_dir, beam=beam)
@@ -277,9 +329,8 @@ if __name__ == "__main__":
         
         # correlate maps with the 15.4 GHz and shift if nesessary
         for i, (img, mask) in enumerate(zip(imgs, masks)):
-            print(masks[-1])
-            shift_arr = phase_cross_correlation(reference_image=imgs[-1], return_error=False, moving_image=img, reference_mask=masks[-1], moving_mask=mask, upsample_factor=10)
-            print(shift_arr)
+            # shift_arr = phase_cross_correlation(reference_image=imgs[-1], return_error=False, moving_image=img, reference_mask=masks[-1], moving_mask=mask, upsample_factor=10)
+            shift_arr =  registrate_images(imgs[0], img, masks[0], mask)
             img = np.roll(img, int(shift_arr[0]), axis=0)
             img = np.roll(img, int(shift_arr[1]), axis=1)
             img_shift_dict = {'dec':shift_arr[0]*mapsize[1], 'ra':-shift_arr[1]*mapsize[1]}
@@ -290,12 +341,12 @@ if __name__ == "__main__":
                                                                         +img_shift_dict[ax]-cores[-1][ax])
                     data_dict['img_shift_{}_{}'.format(ax, freqs[i]).replace('.', '')].append(img_shift_dict[ax])
 
-        beam = beams[-1]
+        beam = beams[0]
         npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
         spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
 
         # plot spectral index map
-        img_toplot = imgs[-1]
+        img_toplot = imgs[0]
         std = find_image_std(img_toplot, npixels_beam)
         blc, trc = find_bbox(img_toplot, level=5*std, min_maxintensity_mjyperbeam=20*std,
                             min_area_pix=2*npixels_beam, delta=10)
@@ -312,7 +363,7 @@ if __name__ == "__main__":
         plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
         plt.close()
 
-        iplot(contours=img_toplot, colors=masks[-1], vectors=None, vectors_values=None, x=x,
+        iplot(contours=img_toplot, colors=masks[0], vectors=None, vectors_values=None, x=x,
                 y=y, cmap='coolwarm', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
                 blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
         plt.savefig(os.path.join(base_dir, 'index_maps/core_map_{}.png'.format(sourse)), bbox_inches='tight')
