@@ -186,7 +186,7 @@ def create_mask_from_core(core, mapsize, working_dir, beam, uvfits, std):
                                         show_difmap_output=True)
     core_image = create_clean_image_from_fits_file(os.path.join(working_dir, "1.fits"))
     mask = np.ones((mapsize[0], mapsize[0]))
-    mask[core_image.image > 10*std] = 0
+    mask[core_image.image > 5*std] = 0
     return mask
 
 
@@ -198,7 +198,7 @@ def create_mask_from_round_core(core, mapsize):
     r_pix = int(core["size"]/mapsize[1])
     for dec_pix in np.arange(mapsize[0]):
         for ra_pix in np.arange(mapsize[0]):
-            if (dec_pix-mapsize[0]/2-shift_dec_pix)**2 + (ra_pix-mapsize[0]/2+shift_ra_pix)**2 <= (10*r_pix)**2:
+            if np.hypot(dec_pix-mapsize[0]/2-shift_dec_pix, ra_pix-mapsize[0]/2+shift_ra_pix) <= 10*r_pix:
                 mask[dec_pix, ra_pix] = 0
     return mask
 
@@ -378,11 +378,12 @@ if __name__ == "__main__":
         plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
         plt.close()
 
-        iplot(contours=img_toplot, colors=masks[0], vectors=None, vectors_values=None, x=x,
-                y=y, cmap='coolwarm', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
-                blc=blc, trc=trc, colorbar_label='$mask$', show_beam=True)
-        plt.savefig(os.path.join(base_dir, 'index_maps/core_map_{}.png'.format(sourse)), bbox_inches='tight')
-        plt.close()
+        for i, img in enumerate(imgs):
+            iplot(contours=img, colors=masks[i], vectors=None, vectors_values=None, x=x,
+                    y=y, cmap='coolwarm', min_abs_level=3*std, colors_mask=colors_mask, beam=beam,
+                    blc=blc, trc=trc, colorbar_label='$mask$', show_beam=True)
+            plt.savefig(os.path.join(base_dir, 'index_maps/core_map_{}_{}GHz.png'.format(sourse, freqs[i])), bbox_inches='tight')
+            plt.close()
 
     data = pd.DataFrame(data_dict)
     with open(os.path.join(base_dir, 'un_shift_data.txt'), 'w') as fo:
