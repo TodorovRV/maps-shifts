@@ -1,4 +1,4 @@
-       sourse shift_dec_81 shift_ra_81 shift_dec_84 shift_ra_84 shift_dec_121 shift_ra_121
+       sourse core_shift_dec_81 core_shift_ra_81 core_shift_dec_84 core_shift_ra_84 core_shift_dec_121 core_shift_ra_121
 0    0003-066     0.029975   -0.018069    -0.016809    0.008857     -0.001299     0.014944
 1    0003+380    -0.073294    0.112178     0.134663   -0.034451     -0.067825     0.103807
 2    0003+380     -0.04421    0.044882    -0.080403    0.069075     -0.030036      0.03484

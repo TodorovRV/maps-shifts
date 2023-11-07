@@ -29,13 +29,13 @@ def load_data(sourse, date, freq):
 
 
 def create_individual_script(sourse, date, freqs, base_dir, deep_clean=False):
-    uv_min = np.inf
-    uv_max = 0
+    uv_min = 0
+    uv_max = np.inf
     for freq in freqs:
         uv_min_, uv_max_ = get_uvrange(load_data(sourse, date, freq))
-        if uv_min_ < uv_min:
+        if uv_min_ > uv_min:
             uv_min = uv_min_
-        if uv_max_ > uv_max:
+        if uv_max_ < uv_max:
             uv_max = uv_max_                                
 
     with open(os.path.join(base_dir, "script_clean_rms.txt")) as f:
