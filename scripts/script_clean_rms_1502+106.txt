@@ -84,7 +84,7 @@
 ! 0> wmod filename.mod
 !
 
-uvrange 5.2075265, 437.718848
+uvrange 9.950617, 230.219248
 integer clean_niter; 
 integer max_deep_clean_cycles; max_deep_clean_cycles = 20
 float overclean_coef; overclean_coef = 1.0
