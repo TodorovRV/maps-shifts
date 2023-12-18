@@ -330,6 +330,14 @@ if __name__ == "__main__":
     
     with open("sourse_date_list.txt") as f:
         lines = f.readlines()
+
+    with open("brigtest_sources.txt") as f:
+        lines_ = f.readlines()
+
+    pef_sources = []
+    for line in lines_:
+        line = line.split()
+        pef_sources.append(line[0])
     
     data_dict = {'sourse':[],
               'core_shift_dec_81':[],
@@ -353,12 +361,13 @@ if __name__ == "__main__":
               'core_loc_dec_154':[],
               'core_loc_ra_154':[]}
 
-
     for line in lines:
         arr = line.split()
         if arr[0] == 'skip':
             continue
         sourse = arr[0]
+        if sourse not in pef_sources:
+            continue
         data_dict['sourse'].append(sourse)
         date = arr[1]
         # getting images, core parameters and masks according to cores
