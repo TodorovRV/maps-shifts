@@ -256,7 +256,7 @@ def get_spec_ind(imgs, freq, npixels_beam):
     return spec_ind_map
 
 
-def registrate_images(image1, image2, mask1, mask2, fit_gaussian=True, n=9, max_shift=30):
+def registrate_images(image1, image2, mask1, mask2, fit_gaussian=True, n=9, max_shift=500):
     """
     :param image1:
         2d numpy array with image.
@@ -303,7 +303,7 @@ def registrate_images(image1, image2, mask1, mask2, fit_gaussian=True, n=9, max_
 
 
 # TODO: test this function
-def create_shifted_img(uvfits, mapsize_clean, path_to_script, shift, beam=None):
+def create_shifted_img(uvfits, mapsize_clean, path_to_script, shift, beam=None, base_dir=None):
     with TemporaryDirectory() as working_dir:
         # First CLEAN and dump difmap model file with CCs
         clean_difmap(uvfits, os.path.join(working_dir, "test_cc.fits"), "i",
@@ -316,6 +316,8 @@ def create_shifted_img(uvfits, mapsize_clean, path_to_script, shift, beam=None):
                      super_unif_dynam=None, unif_dynam=None,
                      taper_gaussian_value=None, taper_gaussian_radius=None)
         ccimage = create_clean_image_from_fits_file(os.path.join(working_dir, "test_cc.fits"))
+    if base_dir is not None:
+        os.remove(os.path.join(base_dir, "difmap.log"))
     return ccimage.image
 
 
@@ -389,11 +391,14 @@ if __name__ == "__main__":
             beams.append(beam)
         
         # correlate maps with the 15.4 GHz and shift if nesessary
+        shifted_imgs = []
         for i, (img, mask) in enumerate(zip(imgs, masks)):
             shift_arr =  registrate_images(imgs[-1], img, masks[-1], mask)
-            img = np.roll(img, int(shift_arr[0]), axis=0)
-            img = np.roll(img, int(shift_arr[1]), axis=1)
+            #img = np.roll(img, int(shift_arr[0]), axis=0)
+            #img = np.roll(img, int(shift_arr[1]), axis=1)
             img_shift_dict = {'dec':shift_arr[0]*mapsize[1], 'ra':-shift_arr[1]*mapsize[1]}
+            shifted_imgs.append(create_shifted_img(load_data(sourse, date, freqs[i]), mapsize, os.path.join(base_dir, 'script_clean_rms.txt'), \
+                                     [img_shift_dict['ra'], img_shift_dict['dec']], beam = beams[-1], base_dir=base_dir))
             for ax in ['dec', 'ra']:
                 data_dict['core_loc_{}_{}'.format(ax, freqs[i]).replace('.', '')].append(cores[i][ax])
                 if freqs[i] != freqs[-1]:
@@ -403,9 +408,9 @@ if __name__ == "__main__":
 
         beam = beams[-1]
         npixels_beam = np.pi * beam[0] * beam[1] / (4 * np.log(2) * mapsize[1] ** 2)
-        spec_ind_map = get_spec_ind(imgs, freqs, npixels_beam)
+        spec_ind_map = get_spec_ind(shifted_imgs, freqs, npixels_beam)
 
-        img_toplot = imgs[-1]
+        img_toplot = shifted_imgs[-1]
         std = find_image_std(img_toplot, npixels_beam)
         blc, trc = find_bbox(img_toplot, level=5*std, min_maxintensity_mjyperbeam=20*std,
                             min_area_pix=2*npixels_beam, delta=10)
@@ -417,7 +422,7 @@ if __name__ == "__main__":
         y = np.linspace(mapsize[0]/2*mapsize[1]/206265000, -mapsize[0]/2*mapsize[1]/206265000, mapsize[0])
         colors_mask = img_toplot < 3*std
         iplot(contours=img_toplot, colors=spec_ind_map, vectors=None, vectors_values=None, x=x,
-                y=y, cmap='gist_rainbow', min_abs_level=3*std, colors_mask=colors_mask, beam=(beam[1], beam[0], beam[2]),
+                y=y, cmap='gist_ncar', min_abs_level=3*std, colors_mask=colors_mask, beam=(beam[1], beam[0], beam[2]),
                 blc=blc, trc=trc, colorbar_label='$\\alpha$', show_beam=True)
         plt.savefig(os.path.join(base_dir, 'index_maps/spec_ind_map_{}.png'.format(sourse)), bbox_inches='tight')
         plt.close()
