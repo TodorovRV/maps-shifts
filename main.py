@@ -412,8 +412,8 @@ if __name__ == "__main__":
 
         img_toplot = shifted_imgs[-1]
         std = find_image_std(img_toplot, npixels_beam)
-        blc, trc = find_bbox(img_toplot, level=5*std, min_maxintensity_mjyperbeam=20*std,
-                            min_area_pix=2*npixels_beam, delta=10)
+        blc, trc = find_bbox(img_toplot, level=5*std, min_maxintensity_mjyperbeam=40*std,
+                            min_area_pix=10*npixels_beam, delta=10)
         if blc[0] == 0: blc = (blc[0] + 1, blc[1])
         if blc[1] == 0: blc = (blc[0], blc[1] + 1)
         if trc[0] == img_toplot.shape: trc = (trc[0] - 1, trc[1])
